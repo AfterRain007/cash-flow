@@ -39,10 +39,10 @@
           url: sheetUrl,
           dataType: 'text',
           success: function(data) {
+            console.log(data)
             const rows = data.split('\n');
             rows.forEach((row, index) => {
               const cells = row.split(',');
-              console.log(cells)
               if (index > 0 && cells.length > 1) { // Skip header and empty rows
                 $('#data-table tbody').append(`
                   <tr>
