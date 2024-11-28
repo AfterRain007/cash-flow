@@ -34,7 +34,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r" crossorigin="anonymous" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.min.js" integrity="sha384-0pUGZvbkm6XF6gxjEnlmuGrJXVbNuzT9qBBavbLwCsOGabYfZo0T0to5eqruptLy" crossorigin="anonymous" defer></script>
       
-    <!-- <script>
+    <script>
       $(document).ready(function() {
         const sheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-YxrBUuqBO3hvqqG-qb7W2lKp4g2xLOn5b1qljCGuMxSJBss21spSzxSkiDPQ1aqy-Q_2Ot5U9RXV/pub?gid=985685597&single=true&output=csv';
     
@@ -42,33 +42,77 @@
           url: sheetUrl,
           dataType: 'text',
           success: function(data) {
-            // Step 1: Parse CSV data
             const rows = data.split("\n").map(row => row.split(","));
             const headers = rows.shift(); // Extract headers (not used here)
-
-            // Step 2: Extract Classifications and "SUM of Credit" values
-            const classifications = {};
+    
+            const classifications = {}; // For pie chart data
+            const classificationOverTime = {}; // For line chart data
+            const monthlyData = {}; // For stacked bar chart data
+    
             rows.forEach(row => {
-              const classification = row[1].trim(); // Classification column
+              const date = row[0]?.trim(); // Date column
+              const classification = row[1]?.trim(); // Classification column
               const sumCredit = parseFloat(row[2]) || 0; // SUM of Credit
+              const sumDebit = parseFloat(row[3]) || 0; // SUM of Debit
+    
               if (classification && classification !== "Grand Total") {
-                classifications[classification] = (classifications[classification] || 0) + sumCredit;
+                // Accumulate Credit for Pie Chart
+                if (sumCredit > 0) {
+                  classifications[classification] = (classifications[classification] || 0) + sumCredit;
+                }
+    
+                // Accumulate Credit Over Time for Line Chart
+                if (date) {
+                  classificationOverTime[classification] = classificationOverTime[classification] || {};
+                  classificationOverTime[classification][date] = (classificationOverTime[classification][date] || 0) + sumCredit;
+                }
+              }
+    
+              if (date && date !== "Grand Total") {
+                // Accumulate Monthly Debit and Credit for Stacked Bar Chart
+                monthlyData[date] = monthlyData[date] || { credit: 0, debit: 0 };
+                monthlyData[date].credit += sumCredit;
+                monthlyData[date].debit += sumDebit;
               }
             });
-
-            // Step 3: Prepare data for Chart.js
-            const labels = Object.keys(classifications); // Classification labels
-            const dataValues = Object.values(classifications); // Corresponding sums
-
-            // Step 4: Create Pie Chart
-            const ctx = document.getElementById("classificationChart").getContext("2d");
-            new Chart(ctx, {
+    
+            // Prepare Pie Chart Data
+            const pieLabels = Object.keys(classifications); // Classification labels
+            const pieDataValues = Object.values(classifications); // Corresponding sums
+    
+            // Utility to generate random colors
+            function getRandomColor() {
+              return `#${Math.floor(Math.random() * 16777215).toString(16)}`;
+            }
+    
+            // Prepare Line Chart Data
+            const lineLabels = Array.from(new Set(rows.map(row => row[0]?.trim()).filter(date => date && date !== "Grand Total"))); // Unique Dates
+    
+            const lineDatasets = Object.keys(classificationOverTime)
+              .filter(classification => {
+                return Object.values(classificationOverTime[classification]).some(credit => credit > 0);
+              })
+              .map(classification => ({
+                label: classification,
+                data: lineLabels.map(date => classificationOverTime[classification][date] || 0),
+                borderColor: getRandomColor(),
+                fill: false
+              }));
+    
+            // Prepare Stacked Bar Chart Data
+            const barLabels = Object.keys(monthlyData); // Monthly dates
+            const debitData = barLabels.map(date => monthlyData[date].debit);
+            const creditData = barLabels.map(date => monthlyData[date].credit);
+    
+            // Pie Chart: Classifications
+            const ctxPie = document.getElementById("classificationChart").getContext("2d");
+            new Chart(ctxPie, {
               type: "pie",
               data: {
-                labels: labels,
+                labels: pieLabels,
                 datasets: [{
                   label: "Classifications",
-                  data: dataValues,
+                  data: pieDataValues,
                   backgroundColor: [
                     "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF", "#FF9F40"
                   ],
@@ -77,197 +121,94 @@
               },
               options: {
                 responsive: true,
+                maintainAspectRatio : false,
                 plugins: {
-                  legend: {
-                    position: "top",
-                  },
+                  legend: { position: "top" },
+                  tooltip: { enabled: true }
+                }
+              }
+            });
+    
+            // Line Chart: Credit by Classification Over Time
+            const ctxLine = document.getElementById("creditLineChart").getContext("2d");
+            new Chart(ctxLine, {
+              type: "line",
+              data: {
+                labels: lineLabels,
+                datasets: lineDatasets
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { position: "top" },
                   tooltip: {
-                    enabled: true
+                    enabled: true,
+                    intersect: false,
+                    mode: 'index'
+                  }
+                },
+                interaction: {
+                  mode: 'index',
+                  intersect: false
+                },
+                scales: {
+                  x: { title: { display: true, text: "Months" } },
+                  y: { title: { display: true, text: "Credit Amount" } }
+                }
+              }
+            });
+    
+            // Stacked Bar Chart: Debit vs Credit
+            const ctxBar = document.getElementById("stackedBarChart").getContext("2d");
+            new Chart(ctxBar, {
+              type: "bar",
+              data: {
+                labels: barLabels,
+                datasets: [
+                  {
+                    label: "Debit",
+                    data: debitData,
+                    backgroundColor: "#FF6384"
+                  },
+                  {
+                    label: "Credit",
+                    data: creditData,
+                    backgroundColor: "#36A2EB"
+                  }
+                ]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { position: "top" },
+                  tooltip: {
+                    enabled: true,
+                    intersect: false,
+                    mode: 'index'
+                  }
+                },
+                interaction: {
+                  mode: 'index',
+                  intersect: false
+                },
+                scales: {
+                  x: { 
+                    stacked: true, 
+                    title: { display: true, text: "Months" } 
+                  },
+                  y: { 
+                    stacked: true, 
+                    title: { display: true, text: "Amount" } 
                   }
                 }
               }
             });
-          }
-        });
-      });
-    </script> -->
-
-    <script>
-      const csv = `Date - Year-Month,Classification,SUM of Credit,SUM of Debit
-                  2024-Oct,Girlfriend,32468,0
-                  2024-Oct,Income,0,246584
-                  2024-Nov,Income,0,418000
-                  2024-Nov,Parents,65468,0
-                  2024-Dec,Parents,6545668,0
-                  ,,0,0
-                  Grand Total,,6643604,664584`;
-    
-      // Step 1: Parse CSV data
-      const rows = csv.split("\n").map(row => row.split(","));
-      const headers = rows.shift(); // Extract headers (not used here)
-    
-      const classifications = {}; // For pie chart data
-      const classificationOverTime = {}; // For line chart data
-      const monthlyData = {}; // For stacked bar chart data
-    
-      rows.forEach(row => {
-        const date = row[0]?.trim(); // Date column
-        const classification = row[1]?.trim(); // Classification column
-        const sumCredit = parseFloat(row[2]) || 0; // SUM of Credit
-        const sumDebit = parseFloat(row[3]) || 0; // SUM of Debit
-    
-        if (classification && classification !== "Grand Total") {
-          // Accumulate Credit for Pie Chart
-          if (sumCredit > 0) {
-            classifications[classification] = (classifications[classification] || 0) + sumCredit;
-          }
-    
-          // Accumulate Credit Over Time for Line Chart
-          if (date) {
-            classificationOverTime[classification] = classificationOverTime[classification] || {};
-            classificationOverTime[classification][date] = (classificationOverTime[classification][date] || 0) + sumCredit;
-          }
-        }
-    
-        if (date && date !== "Grand Total") {
-          // Accumulate Monthly Debit and Credit for Stacked Bar Chart
-          monthlyData[date] = monthlyData[date] || { credit: 0, debit: 0 };
-          monthlyData[date].credit += sumCredit;
-          monthlyData[date].debit += sumDebit;
-        }
-      });
-    
-      // Prepare Pie Chart Data
-      const pieLabels = Object.keys(classifications); // Classification labels
-      const pieDataValues = Object.values(classifications); // Corresponding sums
-    
-      // Utility to generate random colors
-      function getRandomColor() {
-        return `#${Math.floor(Math.random() * 16777215).toString(16)}`;
-      }
-
-      // Prepare Line Chart Data
-      const lineLabels = Array.from(new Set(rows.map(row => row[0]?.trim()).filter(date => date && date !== "Grand Total"))); // Unique Dates
-
-      // Filter out classifications with no credit (sumCredit > 0) when building datasets
-      const lineDatasets = Object.keys(classificationOverTime)
-        .filter(classification => {
-          // Check if any date has a non-zero credit for this classification
-          return Object.values(classificationOverTime[classification]).some(credit => credit > 0);
-        })
-        .map(classification => ({
-          label: classification,
-          data: lineLabels.map(date => classificationOverTime[classification][date] || 0),
-          borderColor: getRandomColor(),
-          fill: false
-        }));
-    
-      // Prepare Stacked Bar Chart Data
-      const barLabels = Object.keys(monthlyData); // Monthly dates
-      const debitData = barLabels.map(date => monthlyData[date].debit);
-      const creditData = barLabels.map(date => monthlyData[date].credit);
-    
-      // Pie Chart: Classifications
-      const ctxPie = document.getElementById("classificationChart").getContext("2d");
-      new Chart(ctxPie, {
-        type: "pie",
-        data: {
-          labels: pieLabels,
-          datasets: [{
-            label: "Classifications",
-            data: pieDataValues,
-            backgroundColor: [
-              "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF", "#FF9F40"
-            ],
-            hoverOffset: 4
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio : false,
-          plugins: {
-            legend: { position: "top" },
-            tooltip: { enabled: true }
-          }
-        }
-      });
-    
-      // Line Chart: Credit by Classification Over Time
-      const ctxLine = document.getElementById("creditLineChart").getContext("2d");
-      new Chart(ctxLine, {
-        type: "line",
-        data: {
-          labels: lineLabels,
-          datasets: lineDatasets
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: "top" },
-            tooltip: {
-              enabled: true,
-              intersect: false,  // Tooltip appears even when not directly on data points
-              mode: 'index',     // Show all data points at the same X position
-            }
-          },
-          interaction: {
-            mode: 'index',      // Tooltip shows all data points for the same index
-            intersect: false    // Tooltip will trigger even if you're not directly on the point
-          },
-          scales: {
-            x: { title: { display: true, text: "Months" } },
-            y: { title: { display: true, text: "Credit Amount" } }
-          }
-        }
-      });
-    
-      // Stacked Bar Chart: Debit vs Credit
-      const ctxBar = document.getElementById("stackedBarChart").getContext("2d");
-      new Chart(ctxBar, {
-        type: "bar",
-        data: {
-          labels: barLabels,
-          datasets: [
-            {
-              label: "Debit",
-              data: debitData,
-              backgroundColor: "#FF6384"
-            },
-            {
-              label: "Credit",
-              data: creditData,
-              backgroundColor: "#36A2EB"
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: "top" },
-            tooltip: {
-              enabled: true,
-              intersect: false,  // Tooltip will show even when hovering near the bars or axis
-              mode: 'index'     // Show all data points at the same X position
-            }
-          },
-          interaction: {
-            mode: 'index',      // Tooltip shows all datasets for the same index
-            intersect: false    // Tooltip will trigger even if you're not directly on a bar
-          },
-          scales: {
-            x: { 
-              stacked: true, 
-              title: { display: true, text: "Months" } 
-            },
-            y: { 
-              stacked: true, 
-              title: { display: true, text: "Amount" } 
-            }
-          }
-        }
-      });
+          } // End of success function
+        }); // End of $.ajax
+      }); // End of $(document).ready
     </script>
+    
   </body>
 </html>
