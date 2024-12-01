@@ -10,32 +10,61 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <!--     <link rel="stylesheet" href="./public/style.css"> -->
+    <style>
+      .container-chart {
+        box-shadow: 0 0px 10px rgba(0, 0, 0, 0.3);
+        display: flex; 
+        justify-content: center; 
+        align-items: center;
+        transition: all 0.3s ease; /* Smooth transition for all properties */
+        width: 100%;
+      }
+    </style>
   </head>
   <body>
-    <main class="container pt-5">
-      <h3 class="row mb-3 d-flex justify-content-center align-items-center">
-        Money Management
-      </h3>
-      <div>
-        <label for="startDate">Start Date:</label>
-        <input type="date" id="startDate">
-        
-        <label for="endDate">End Date:</label>
-        <input type="date" id="endDate">
-        
-        <button id="applyFilter">Apply Filter</button>
-      </div>      
-      <div class="row mb-3">
-        <div class="col-12 col-lg-3" style="height: 40vh;">
-          <canvas id="classificationChart" style="display: block"></canvas>
+    <main class="container mt-3">
+      <div class="row mb-3 d-flex justify-content-between align-items-center">
+        <h3 class="col-auto">Money Management</h3>
+        <button class="btn btn-secondary text-decoration-none col-auto" type="button" data-bs-toggle="collapse" data-bs-target="#filterCollapse" aria-expanded="false" aria-controls="filterCollapse">
+          Filters
+        </button>
+      </div>
+      <div class="collapse" id="filterCollapse">
+        <div class="card card-body">
+          <div class="row mb-3">
+            <div class="col-4">
+              <label for="startDate">Select Start Date:</label>
+              <input type="date" id="startDate" name="date" class="form-control">
+            </div>
+            <div class="col-4">
+              <label for="endDate">Select End Date:</label>
+              <input type="date" id="endDate" name="date" class="form-control">
+            </div>
+            <div class="col-auto">
+              <br>
+              <button class="btn btn-primary" id="applyFilter">Apply Filter</button>
+            </div>
+          </div>
         </div>
-        <div class="col-12 col-lg-5" style="height: 40vh;">
-          <canvas id="creditLineChart" style="display: block"></canvas>
+      </div>
+      
+      <div class="row mb-3">
+        <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+          <div class="container-chart" style="height: 40vh;">
+            <canvas id="classificationChart" style="display: block"></canvas>
+          </div>
+        </div>
+        <div class="col-12 col-lg-5">
+          <div class="container-chart" style="height: 40vh;">
+            <canvas id="creditLineChart" style="display: block"></canvas>
+          </div>
         </div>
       </div>
       <div class="row">
-        <div class="col-12" style="height: 40vh;">
-          <canvas id="stackedBarChart" style="display: block;"></canvas>
+        <div class="col-12 mb-3">
+          <div class="container-chart" style="height: 40vh;">
+            <canvas id="stackedBarChart" style="display: block;"></canvas>
+          </div>
         </div>
       </div>
     </main>
@@ -45,15 +74,180 @@
       
     <script>
       $(document).ready(function() {
-  const sheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-YxrBUuqBO3hvqqG-qb7W2lKp4g2xLOn5b1qljCGuMxSJBss21spSzxSkiDPQ1aqy-Q_2Ot5U9RXV/pub?gid=985685597&single=true&output=csv';
-  
-  let originalData = []; // To store unfiltered data
-  let pieChart, lineChart, barChart; // Chart instances
-  
-  $.ajax({
-    url: sheetUrl,
-    dataType: 'text',
-    success: function(data) {
+        const sheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR-YxrBUuqBO3hvqqG-qb7W2lKp4g2xLOn5b1qljCGuMxSJBss21spSzxSkiDPQ1aqy-Q_2Ot5U9RXV/pub?gid=985685597&single=true&output=csv';
+        
+        let originalData = []; // To store unfiltered data
+        let pieChart, lineChart, barChart; // Chart instances
+        
+        $.ajax({
+          url: sheetUrl,
+          dataType: 'text',
+          success: function(data) {
+            let originalData = []; // To store unfiltered data
+            let pieChart, lineChart, barChart; // Chart instances
+            originalData = data.split("\n").map(row => row.split(","));
+            const headers = originalData.shift(); // Remove and store headers
+
+            function filterAndRenderCharts(startDate, endDate) {
+              const filteredRows = originalData.filter(row => {
+                const date = row[0]?.trim();
+                if (date) {
+                  const rowDate = new Date(date);
+                  return (!startDate || rowDate >= startDate) && (!endDate || rowDate <= endDate);
+                }
+                return false;
+              });
+              
+              // Process filtered rows
+              const classifications = {};
+              const classificationOverTime = {};
+              const monthlyData = {};
+              
+              filteredRows.forEach(row => {
+                const date = row[0]?.trim();
+                const classification = row[1]?.trim();
+                const sumCredit = parseFloat(row[2]) || 0;
+                const sumDebit = parseFloat(row[3]) || 0;
+
+                if (classification && classification !== "Grand Total") {
+                  if (sumCredit > 0) {
+                    classifications[classification] = (classifications[classification] || 0) + sumCredit;
+                  }
+                  if (date) {
+                    classificationOverTime[classification] = classificationOverTime[classification] || {};
+                    classificationOverTime[classification][date] = (classificationOverTime[classification][date] || 0) + sumCredit;
+                  }
+                }
+                
+                if (date && date !== "Grand Total") {
+                  monthlyData[date] = monthlyData[date] || { credit: 0, debit: 0 };
+                  monthlyData[date].credit += sumCredit;
+                  monthlyData[date].debit += sumDebit;
+                }
+              });
+
+              // Prepare data for charts
+              const pieLabels = Object.keys(classifications);
+              const pieDataValues = Object.values(classifications);
+
+              function getRandomColor() {
+                return `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`;
+              }
+              const lineLabels = Array.from(new Set(filteredRows.map(row => row[0]?.trim())));
+              const lineDatasets = Object.keys(classificationOverTime).map(classification => ({
+                label: classification,
+                data: lineLabels.map(date => classificationOverTime[classification][date] || 0),
+                borderColor: getRandomColor(),
+                fill: false
+              }));
+
+              const barLabels = Object.keys(monthlyData);
+              const debitData = barLabels.map(date => monthlyData[date].debit);
+              const creditData = barLabels.map(date => monthlyData[date].credit);
+
+              // Update or Create Charts
+              if (pieChart) pieChart.destroy();
+              if (lineChart) lineChart.destroy();
+              if (barChart) barChart.destroy();
+
+              const ctxPie = document.getElementById("classificationChart").getContext("2d");
+              pieChart = new Chart(ctxPie, {
+                type: "pie",
+                data: {
+                  labels: pieLabels,
+                  datasets: [{
+                    label: "Classifications",
+                    data: pieDataValues,
+                    backgroundColor: ["#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF", "#FF9F40"],
+                    hoverOffset: 4
+                  }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+              });
+
+              const ctxLine = document.getElementById("creditLineChart").getContext("2d");
+              lineChart = new Chart(ctxLine, {
+                type: "line",
+                data: {
+                  labels: lineLabels,
+                  datasets: lineDatasets,
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: {
+                      position: "top",
+                    },
+                    tooltip: {
+                      mode: "index", // Tooltip for the closest x-coordinate
+                      intersect: false, // Allow tooltips to show even when not hovering directly on a data point
+                    },
+                  },
+                  interaction: {
+                    mode: "index", // Matches closest x-coordinate
+                    intersect: false, // Doesn't require direct hover over data point
+                  },
+                },
+              });
+
+              const ctxBar = document.getElementById("stackedBarChart").getContext("2d");
+              barChart = new Chart(ctxBar, {
+                type: "bar",
+                data: {
+                  labels: barLabels,
+                  datasets: [
+                    { label: "Debit", data: debitData, backgroundColor: "#FF6384" },
+                    { label: "Credit", data: creditData, backgroundColor: "#36A2EB" },
+                  ],
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    x: { stacked: true },
+                    y: { stacked: true },
+                  },
+                  plugins: {
+                    tooltip: {
+                      mode: "index", // Tooltip for the closest x-coordinate
+                      intersect: false, // Allow tooltips to show without direct hovering
+                    },
+                  },
+                  interaction: {
+                    mode: "index", // Matches closest x-coordinate
+                    intersect: false, // Doesn't require direct hover over a bar
+                  },
+                },
+              });
+            }
+
+            // Initial render with all data
+            filterAndRenderCharts();
+
+            // Apply filter on button click
+            $('#applyFilter').click(() => {
+              const startDate = new Date($('#startDate').val());
+              const endDate = new Date($('#endDate').val());
+              filterAndRenderCharts(startDate, endDate);
+            });
+          }});
+        });
+    </script>
+    
+    <!-- <script>
+      let originalData = []; // To store unfiltered data
+      let pieChart, lineChart, barChart; // Chart instances
+
+      const data = `Date - Year-Month,Classification,SUM of Credit,SUM of Debit
+            2024-Oct,Girlfriend,32468,0
+            2024-Oct,Income,0,246584
+            2024-Nov,Income,0,418000
+            2024-Nov,Parents,65468,0
+            2024-Dec,Parents,65668,0
+            ,,0,0
+            Grand Total,,6643604,664584`;
+
       originalData = data.split("\n").map(row => row.split(","));
       const headers = originalData.shift(); // Remove and store headers
 
@@ -99,6 +293,9 @@
         const pieLabels = Object.keys(classifications);
         const pieDataValues = Object.values(classifications);
 
+        function getRandomColor() {
+          return `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`;
+        }
         const lineLabels = Array.from(new Set(filteredRows.map(row => row[0]?.trim())));
         const lineDatasets = Object.keys(classificationOverTime).map(classification => ({
           label: classification,
@@ -136,13 +333,25 @@
           type: "line",
           data: {
             labels: lineLabels,
-            datasets: lineDatasets
+            datasets: lineDatasets,
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { position: "top" } }
-          }
+            plugins: {
+              legend: {
+                position: "top",
+              },
+              tooltip: {
+                mode: "index", // Tooltip for the closest x-coordinate
+                intersect: false, // Allow tooltips to show even when not hovering directly on a data point
+              },
+            },
+            interaction: {
+              mode: "index", // Matches closest x-coordinate
+              intersect: false, // Doesn't require direct hover over data point
+            },
+          },
         });
 
         const ctxBar = document.getElementById("stackedBarChart").getContext("2d");
@@ -152,14 +361,27 @@
             labels: barLabels,
             datasets: [
               { label: "Debit", data: debitData, backgroundColor: "#FF6384" },
-              { label: "Credit", data: creditData, backgroundColor: "#36A2EB" }
-            ]
+              { label: "Credit", data: creditData, backgroundColor: "#36A2EB" },
+            ],
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            scales: { x: { stacked: true }, y: { stacked: true } }
-          }
+            scales: {
+              x: { stacked: true },
+              y: { stacked: true },
+            },
+            plugins: {
+              tooltip: {
+                mode: "index", // Tooltip for the closest x-coordinate
+                intersect: false, // Allow tooltips to show without direct hovering
+              },
+            },
+            interaction: {
+              mode: "index", // Matches closest x-coordinate
+              intersect: false, // Doesn't require direct hover over a bar
+            },
+          },
         });
       }
 
@@ -172,10 +394,41 @@
         const endDate = new Date($('#endDate').val());
         filterAndRenderCharts(startDate, endDate);
       });
-    }
-  });
-});
+    </script> -->
 
+    <script>
+      $(document).ready(() => {
+        // Split data into rows and columns
+        const originalData = data.trim().split("\n").map(row => row.split(","));
+        const headers = originalData.shift(); // Remove headers
+
+        // Extract the "Date - Year-Month" column
+        const dates = originalData
+          .map(row => row[0].trim()) // Take the first column (date)
+          .filter(date => date && !date.includes("Grand Total")); // Remove empty and summary rows
+
+        // Parse dates explicitly as "YYYY-MM-01"
+        const parsedDates = dates.map(d => {
+          const [year, month] = d.split("-");
+          const monthIndex = new Date(Date.parse(month + " 1, 2023")).getMonth(); // Convert month name to index
+          return new Date(`${year}-${String(monthIndex + 1).padStart(2, "0")}-01`);
+        });
+
+        // Find earliest and latest dates
+        const startDate = new Date(Math.min(...parsedDates)); // Earliest date
+        const endDate = new Date(Math.max(...parsedDates)); // Latest date
+
+        // Adjust dates to the first and last day of the month
+        startDate.setDate(1); // Set to the 1st
+        endDate.setDate(new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0).getDate()); // Set to the last day
+
+        // Format as YYYY-MM-DD for the input fields
+        const formatDate = date => date.toISOString().split("T")[0];
+
+        // Set values in the date inputs
+        $("#startDate").val(formatDate(startDate));
+        $("#endDate").val(formatDate(endDate));
+      });
     </script>
   </body>
 </html>
